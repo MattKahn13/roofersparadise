@@ -1,10 +1,9 @@
 # RoofersParadise -- one container: map + landing + auth + alerts.
-# rasterio's manylinux wheel bundles GDAL, so no apt GDAL is needed.
-FROM python:3.13-slim
+# Full python image (NOT -slim): rasterio/pyogrio bundle GDAL in their wheels, but GDAL still
+# dynamically links system libs (libexpat.so.1, etc.) that -slim omits -> ImportError at import.
+# The full image ships those libs (and curl for the healthcheck), avoiding a whack-a-mole of .so files.
+FROM python:3.13
 WORKDIR /app
-
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
-    && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
