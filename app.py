@@ -17,11 +17,14 @@ try:                                    # uvicorn runs app.py as a top-level mod
     from ingest import store
     from auth import router as auth_router, current_user, _db as _appdb
     import scheduler
-except ImportError:                     # ...but tests import it as a package
-    from roofersparadise.ingest.contour import build_swaths_cells, FL_BBOX, FREQ_BANDS
-    from roofersparadise.ingest import store
-    from roofersparadise.auth import router as auth_router, current_user, _db as _appdb
-    from roofersparadise import scheduler
+except ImportError as _primary_err:     # ...but tests import it as a package
+    try:
+        from roofersparadise.ingest.contour import build_swaths_cells, FL_BBOX, FREQ_BANDS
+        from roofersparadise.ingest import store
+        from roofersparadise.auth import router as auth_router, current_user, _db as _appdb
+        from roofersparadise import scheduler
+    except ImportError:
+        raise _primary_err              # surface the REAL top-level import error, not the package-fallback miss
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.environ.get("DATA_DIR") or os.path.join(HERE, "data")
