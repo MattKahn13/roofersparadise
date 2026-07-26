@@ -6,7 +6,8 @@ primary_region = "iad"
 
 [env]
   DATA_DIR = "/data"
-  ENABLE_WORKERS = "1"
+  ENABLE_WORKERS = "0"     # Phase 1: lean map-only process (fits 1GB). Phase 2 turns on the
+                           # in-process poller+refresh (bump memory to 2gb first -- rasterio spikes).
   PORT = "8080"
   PUBLIC_BASE_URL = "https://roofersparadise.fly.dev"
 
@@ -24,4 +25,4 @@ primary_region = "iad"
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "1gb"                   # rasterio reads national MRMS grids; give it headroom
+  memory = "2gb"                   # GDAL+rasterio+duckdb+pandas import footprint is ~850MB; 1gb OOM-killed uvicorn
