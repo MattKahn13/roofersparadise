@@ -1,0 +1,27 @@
+# Fly.io deploy config. The container is host-agnostic; this is the recommended target.
+app = "roofersparadise"
+primary_region = "iad"
+
+[build]
+
+[env]
+  DATA_DIR = "/data"
+  ENABLE_WORKERS = "1"
+  PORT = "8080"
+  PUBLIC_BASE_URL = "https://roofersparadise.fly.dev"
+
+# Persistent disk holds the hail Parquet + the SQLite accounts DB across deploys.
+[[mounts]]
+  source = "rp_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false      # the alert poller must stay alive; do not scale to zero
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"                   # rasterio reads national MRMS grids; give it headroom

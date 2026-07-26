@@ -1,0 +1,17 @@
+# Runtime junk -- keep the repo to code + committed hail data (data/hail IS tracked; the
+# daily-refresh workflow commits new partitions there).
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+data/_grib_cache/
+data/_live_cache/
+data/swaths/
+data/*.log
+data/app.db
+data/*.jsonl
+data/_*.json
+data/_audit_log.parquet
+_server.log
+ghost_clicks.jsonl

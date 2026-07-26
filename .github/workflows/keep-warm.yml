@@ -1,0 +1,17 @@
+name: keep-warm
+# Ping the app so the free host doesn't spin down -- keeps the map instant for the next
+# visitor and keeps state warm. Harmless if the host is already up.
+on:
+  schedule:
+    - cron: "*/12 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: ping /healthz
+        run: |
+          url="${{ secrets.PUBLIC_BASE_URL }}"
+          if [ -z "$url" ]; then echo "PUBLIC_BASE_URL secret not set -- skipping"; exit 0; fi
+          curl -fsS "$url/healthz" && echo " ok" || echo "ping failed (host may be waking up)"

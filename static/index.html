@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>RoofersParadise -- Free US Hail Map</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><circle cx='8' cy='8' r='6' fill='%23f2a71b'/></svg>">
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<style>
+  :root{
+    --navy:#12202e; --amber:#f2a71b; --ink:#16202b; --mute:#5f6b76;
+    --glass:rgba(255,255,255,.9);
+    --safeT:env(safe-area-inset-top,0px); --safeB:env(safe-area-inset-bottom,0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);overflow:hidden}
+  #map{position:fixed;inset:0}
+  /* loading overlay -- shown until the first render settles */
+  .loading{position:fixed;inset:0;z-index:100;background:rgba(18,32,46,.94);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:15px;color:#fff;font-size:14px;transition:opacity .5s}
+  .loading.gone{opacity:0;pointer-events:none}
+  .loading b{color:var(--amber)}
+  .loading small{color:#9fb3c0;font-size:12px}
+  .loading .spin{width:46px;height:46px;border:4px solid rgba(255,255,255,.22);border-top-color:var(--amber);
+    border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .glass{background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+    box-shadow:0 2px 12px rgba(0,0,0,.16)}
+
+  /* top: brand + search */
+  .topbar{position:fixed;left:12px;right:12px;top:calc(var(--safeT) + 12px);z-index:20;display:flex;gap:10px;align-items:center}
+  .brand{font-weight:800;font-size:15px;color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.6);white-space:nowrap}
+  .brand span{color:var(--amber)}
+  .search{flex:1;display:flex;align-items:center;gap:8px;border-radius:24px;padding:11px 15px}
+  .search input{border:0;background:transparent;outline:none;font-size:15px;width:100%;color:var(--ink)}
+  .search .ic{color:var(--mute);font-size:15px}
+  #btn-alert{flex:none;border:0;border-radius:50%;width:44px;height:44px;font-size:19px;cursor:pointer;color:var(--navy);position:relative}
+  #btn-alert.on{background:var(--amber)}
+
+  /* standard map controls get themed via maplibre classes */
+  .maplibregl-ctrl-group{border-radius:12px !important;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.16) !important}
+  .maplibregl-ctrl-group button{width:42px !important;height:42px !important}
+  .maplibregl-ctrl-top-right{top:calc(var(--safeT) + 62px) !important;right:12px !important}
+
+  /* layers toggle (custom, sits under the standard controls) */
+  #btn-layers{position:fixed;right:12px;top:calc(var(--safeT) + 200px);z-index:20;width:42px;height:42px;border-radius:12px;border:0;font-size:13px;font-weight:700;cursor:pointer;color:var(--navy)}
+  #btn-layers.active{background:var(--navy);color:#fff}
+  #btn-mode{position:fixed;right:12px;top:calc(var(--safeT) + 250px);z-index:20;height:42px;padding:0 12px;border-radius:12px;border:0;font-size:12px;font-weight:700;cursor:pointer;color:var(--navy);white-space:nowrap}
+  #btn-mode.active{background:#4b1fa6;color:#fff}
+
+  /* viewport-refresh indicator */
+  .updating{position:fixed;left:50%;bottom:calc(var(--safeB) + 80px);transform:translateX(-50%);z-index:40;
+    border-radius:20px;padding:7px 15px;font-size:12.5px;font-weight:700;color:var(--navy);display:none;align-items:center;gap:8px}
+  .updating.on{display:flex}
+  .updating .dot{width:12px;height:12px;border:2px solid rgba(18,32,46,.25);border-top-color:var(--amber);border-radius:50%;animation:spin 1s linear infinite}
+
+  /* orienting caption */
+  .caption{position:fixed;left:12px;right:64px;top:calc(var(--safeT) + 60px);z-index:19;border-radius:12px;
+    padding:9px 32px 9px 13px;font-size:12.5px;color:var(--ink);line-height:1.4;max-width:560px}
+  .caption b{color:var(--navy)}
+  .caption .x{position:absolute;right:10px;top:7px;cursor:pointer;color:var(--mute);font-size:16px;line-height:1}
+
+  /* floating hail badge on tap */
+  #hailbadge{position:fixed;z-index:25;transform:translate(-50%,-150%);background:var(--navy);color:#fff;
+    font-weight:800;font-size:13px;padding:5px 10px;border-radius:8px;pointer-events:none;display:none;white-space:nowrap}
+  #hailbadge:after{content:"";position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--navy)}
+
+  /* legend */
+  .legend{position:fixed;left:12px;bottom:calc(var(--safeB) + 74px);z-index:15;border-radius:10px;padding:7px 10px;font-size:11px;line-height:1.6}
+  .legend b{display:block;font-size:9px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+  /* time bar -- slim, always visible, docked bottom */
+  .timebar{position:fixed;left:12px;right:12px;bottom:calc(var(--safeB) + 12px);z-index:18;border-radius:16px;padding:10px 14px;display:flex;align-items:center;gap:11px}
+  .timebar button{border:0;background:var(--navy);color:#fff;width:34px;height:34px;border-radius:10px;font-size:15px;cursor:pointer;flex:none}
+  .timebar .date{font-weight:800;font-size:14px;min-width:110px;text-align:center;font-variant-numeric:tabular-nums}
+  .timebar .date small{display:block;font-weight:600;font-size:10px;color:var(--mute)}
+  .timebar input[type=range]{flex:1;accent-color:var(--amber);min-width:40px}
+  .timebar .tot{font-size:11px;color:var(--mute);display:flex;align-items:center;gap:4px;white-space:nowrap;cursor:pointer}
+
+  /* bottom sheet -- hidden until you tap something, then slides up over the time bar */
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;background:#fff;border-radius:20px 20px 0 0;
+    box-shadow:0 -6px 26px rgba(0,0,0,.28);transform:translateY(100%);transition:transform .28s cubic-bezier(.25,.9,.3,1);
+    max-height:82vh;display:flex;flex-direction:column;padding-bottom:calc(var(--safeB) + 6px)}
+  .sheet.open{transform:translateY(0)}
+  .sheet .grip{padding:10px 0 4px;display:flex;justify-content:center;cursor:pointer}
+  .sheet .grip:before{content:"";width:42px;height:5px;border-radius:3px;background:#d3d9de}
+  .sheet .body{overflow-y:auto;padding:4px 20px 18px}
+  .sheet h2{font-size:18px;margin:2px 0}
+  .sheet .sub{color:var(--mute);font-size:13px;margin:2px 0 12px}
+  .row{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid #eef1f3;font-size:14px}
+  .row b{font-variant-numeric:tabular-nums}
+  .cta{background:#e5533d;color:#fff;border:0;border-radius:12px;padding:14px;font-weight:800;font-size:14px;width:100%;cursor:pointer;margin-top:14px;text-align:left}
+  .cta small{display:block;font-weight:400;opacity:.9;margin-top:2px;font-size:12px}
+
+  /* modal */
+  .modal{position:fixed;inset:0;background:rgba(10,16,22,.5);z-index:50;display:none;align-items:flex-end;justify-content:center}
+  .modal.on{display:flex}
+  .card{background:#fff;border-radius:18px 18px 0 0;width:100%;max-width:460px;padding:22px 20px calc(24px + var(--safeB))}
+  .card h3{margin:0 0 6px}.card p{color:var(--mute);font-size:13px;margin:0 0 14px;line-height:1.5}
+  .card input{width:100%;padding:12px;border:1px solid #d7dde2;border-radius:10px;font-size:15px;margin-bottom:10px}
+  .card .go{background:var(--amber);color:var(--navy);border:0;border-radius:11px;padding:13px;font-weight:800;width:100%;cursor:pointer}
+  .card .ok{color:#1f9e6a;font-weight:700;text-align:center;padding:12px 0}
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="loading" id="loading">
+  <div class="spin"></div>
+  <div>Loading <b>US hail history</b></div>
+  <small>Rendering thousands of storm zones -- one moment</small>
+</div>
+
+<div class="topbar">
+  <div class="brand">Roofers<span>Paradise</span></div>
+  <div class="search glass">
+    <span class="ic">&#9906;</span>
+    <input id="q" placeholder="Search an address" autocomplete="off" inputmode="search">
+  </div>
+  <button id="btn-alert" class="glass" title="Get alerted when hail hits this area">&#128276;</button>
+</div>
+
+<button id="btn-layers" class="glass" title="Toggle dark map">Dark</button>
+<button id="btn-mode" class="glass" title="Toggle repeat-hit hot zones">Hail size</button>
+
+<div class="caption glass" id="caption">
+  <b>Every place hail has hit</b>, colored by size (yellow = small, red = giant). Tap a zone for detail, or search an address to see when it was hit.
+  <div style="font-size:11px;color:var(--mute);margin-top:5px">Data: NOAA MRMS radar (2023-present). Not affiliated with the National Weather Service.</div>
+  <span class="x" onclick="this.parentNode.remove()">&times;</span>
+</div>
+
+<div id="hailbadge"></div>
+<div class="updating glass" id="updating"><span class="dot"></span>Loading hail</div>
+
+<div class="legend glass" id="legend">
+  <b>Max hail</b>
+  <i style="background:#8f1010"></i>2&quot;+ &nbsp;
+  <i style="background:#e5533d"></i>1.75&quot; &nbsp;
+  <i style="background:#fdae61"></i>1&quot; &nbsp;
+  <i style="background:#fed98e"></i>0.75&quot;
+</div>
+
+<div class="timebar glass">
+  <button id="t-play" title="Play">&#9654;</button>
+  <button id="t-prev" title="Previous storm">&#8249;</button>
+  <div class="date" id="t-date">--<small id="t-year"></small></div>
+  <input type="range" id="t-range" min="0" max="0" value="0">
+  <button id="t-next" title="Next storm">&#8250;</button>
+  <label class="tot"><input type="checkbox" id="t-total"> All</label>
+</div>
+
+<div class="sheet" id="sheet">
+  <div class="grip" id="grip"></div>
+  <div class="body">
+    <h2 id="sheet-title"></h2>
+    <p class="sub" id="sheet-sub"></p>
+    <div id="sheet-content"></div>
+    <button class="cta" id="sheet-cta">See every home in this hail zone<small>Your door-knock list, with the already-re-roofed homes removed</small></button>
+  </div>
+</div>
+
+<div class="modal" id="modal"><div class="card" id="card"></div></div>
+
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="/static/app.js?v=11"></script>
+</body>
+</html>

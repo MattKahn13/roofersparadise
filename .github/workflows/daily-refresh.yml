@@ -1,0 +1,36 @@
+name: daily-refresh
+# Ingest the trailing complete days of MRMS hail and commit any new Parquet partitions.
+# Data lives in the repo, so the commit triggers the host (Render autoDeploy) to redeploy
+# with fresh data. Idempotent: ingest_date skips partitions already written.
+on:
+  schedule:
+    - cron: "30 6 * * *"   # ~06:30 UTC, after the prior UTC day's MRMS daily-max is complete
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: daily-refresh
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install --no-cache-dir -r requirements.txt
+      - name: ingest trailing days
+        run: python -m ingest.refresh
+      - name: commit new partitions
+        run: |
+          git config user.name "roofersparadise-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add data/hail
+          if git diff --cached --quiet; then
+            echo "no new hail partitions today"
+          else
+            git commit -m "data: daily hail refresh $(date -u +%Y-%m-%d)"
+            git push
+          fi

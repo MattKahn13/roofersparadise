@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoofersParadise -- Hail History Report</title>
+<style>
+  :root{--navy:#12202e;--amber:#f2a71b;--ink:#16202b;--mute:#5f6b76;--line:#e2e6ea;--hot:#e5533d}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--ink);background:#eef2f4;line-height:1.5}
+  .sheet{max-width:760px;margin:22px auto;background:#fff;box-shadow:0 2px 16px rgba(0,0,0,.1);border-radius:10px;overflow:hidden}
+  header{background:var(--navy);color:#fff;padding:20px 26px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px}
+  header h1{margin:0;font-size:20px;font-weight:800}
+  header h1 span{color:var(--amber)}
+  header .rpt{font-size:12px;color:#a9b7c4;text-transform:uppercase;letter-spacing:.1em;margin-top:4px}
+  header .gen{font-size:11px;color:#8ea3b0;text-align:right}
+  .body{padding:24px 26px}
+  .addr{font-size:19px;font-weight:700;margin:0 0 2px}
+  .sub{color:var(--mute);font-size:13px;margin:0 0 18px}
+  .summary{background:#f6f8f9;border-left:4px solid var(--amber);padding:13px 16px;border-radius:6px;font-size:14px;margin-bottom:20px}
+  .summary b{color:var(--navy)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line)}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute)}
+  td.sz{font-weight:700;font-variant-numeric:tabular-nums}
+  .recent{color:var(--hot);font-weight:700;font-size:11px}
+  .soL{background:#fff6ec;border:1px solid #f2c98a;border-radius:8px;padding:13px 16px;font-size:13px;margin:20px 0}
+  .soL b{color:#9a5b00}
+  .actions{display:flex;gap:10px;margin:22px 0 4px}
+  .actions button{border:0;border-radius:9px;padding:11px 16px;font-weight:700;font-size:14px;cursor:pointer}
+  .print{background:var(--navy);color:#fff}
+  .csv{background:#fff;color:var(--navy);border:1.5px solid var(--navy)!important}
+  footer{padding:14px 26px;border-top:1px solid var(--line);font-size:11px;color:var(--mute)}
+  footer b{color:var(--ink)}
+  .empty{padding:30px;text-align:center;color:var(--mute)}
+  @media print{body{background:#fff}.sheet{box-shadow:none;margin:0;max-width:none}.actions{display:none}}
+</style>
+</head>
+<body>
+<div class="sheet">
+  <header>
+    <div>
+      <h1>Roofers<span>Paradise</span></h1>
+      <div class="rpt">Hail History Report</div>
+    </div>
+    <div class="gen" id="gen"></div>
+  </header>
+  <div class="body">
+    <div class="addr" id="addr">Loading...</div>
+    <div class="sub" id="coords"></div>
+    <div class="summary" id="summary"></div>
+    <div id="tablewrap"></div>
+    <div class="soL" id="sol" style="display:none"></div>
+    <div class="actions">
+      <button class="print" onclick="window.print()">Print / Save as PDF</button>
+      <button class="csv" id="csvbtn">Download CSV</button>
+    </div>
+  </div>
+  <footer>
+    Built from free NOAA MRMS radar hail data (MESH -- Maximum Estimated Size of Hail). Sizes are the
+    radar-estimated maximum stone diameter within ~0.5 mi of this address on each date. Not an inspection
+    or an insurance determination. &nbsp;&middot;&nbsp; <b>RoofersParadise</b>
+  </footer>
+</div>
+<script>
+const p = new URLSearchParams(location.search);
+const lat = parseFloat(p.get('lat')), lng = parseFloat(p.get('lng'));
+const address = p.get('address') || 'this property';
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function human(iso){const [y,m,d]=iso.split('-');return MONTHS[+m-1]+' '+(+d)+', '+y;}
+function sev(inch){return inch>=2?'Very large':inch>=1.5?'Large':inch>=1?'Damaging':'Marginal';}
+document.getElementById('gen').textContent = 'Generated ' + new Date().toLocaleDateString();
+document.getElementById('addr').textContent = decodeURIComponent(address);
+document.getElementById('coords').textContent = isFinite(lat)? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : '';
+
+let HITS = [];
+fetch(`/api/address_history?lat=${lat}&lng=${lng}`).then(r=>r.json()).then(d=>{
+  HITS = d.hits || [];
+  if(!HITS.length){
+    document.getElementById('summary').style.display='none';
+    document.getElementById('tablewrap').innerHTML='<div class="empty">No radar-detected hail on record at this address in our coverage window.</div>';
+    return;
+  }
+  const biggest = HITS.reduce((a,b)=>b.max_in>a.max_in?b:a);
+  const earliest = HITS[HITS.length-1].date;
+  document.getElementById('summary').innerHTML =
+    `This property has been hit by hail <b>${HITS.length} time${HITS.length>1?'s':''}</b> since ${human(earliest)}. `+
+    `Largest recorded: <b>${biggest.max_in.toFixed(2)}"</b> on ${human(biggest.date)}.`;
+  // statute-of-limitations flag: storms within the last 24 months
+  const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth()-24);
+  const recent = HITS.filter(h=>new Date(h.date)>=cutoff);
+  const rows = HITS.map(h=>{
+    const isRecent = new Date(h.date)>=cutoff;
+    return `<tr><td>${human(h.date)}</td><td class="sz">${h.max_in.toFixed(2)}"</td><td>${sev(h.max_in)}</td>`+
+      `<td>${isRecent?'<span class="recent">RECENT</span>':''}</td></tr>`;
+  }).join('');
+  document.getElementById('tablewrap').innerHTML =
+    `<table><thead><tr><th>Date</th><th>Max hail</th><th>Severity</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+  if(recent.length){
+    const sol=document.getElementById('sol'); sol.style.display='block';
+    sol.innerHTML = `<b>${recent.length} storm${recent.length>1?'s':''} in the last 24 months.</b> These may still be `+
+      `within your state's insurance filing window -- worth checking. Filing deadlines vary by state and policy, `+
+      `so confirm with the homeowner's adjuster before relying on any date here.`;
+  }
+});
+document.getElementById('csvbtn').onclick = ()=>{
+  const csv = 'date,max_hail_in,severity\n' + HITS.map(h=>`${h.date},${h.max_in},${sev(h.max_in)}`).join('\n');
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download=`hail-history-${(lat||0).toFixed(3)}_${(lng||0).toFixed(3)}.csv`; a.click();
+};
+</script>
+</body>
+</html>

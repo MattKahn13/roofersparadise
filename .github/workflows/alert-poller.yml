@@ -1,0 +1,29 @@
+name: alert-poller
+# Fires the live hail-alert poll every ~10 min. Free-cloud hosts sleep, so the poller runs
+# HERE (not in-process). Reads subscriptions from Turso, sends via Resend, dedupes by cooldown.
+# NOTE: scheduled workflows run only on the default branch; GitHub cron is best-effort.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+concurrency:
+  group: alert-poller
+  cancel-in-progress: false
+jobs:
+  poll:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install --no-cache-dir -r requirements.txt
+      - name: poll (DB-backed)
+        env:
+          TURSO_DATABASE_URL: ${{ secrets.TURSO_DATABASE_URL }}
+          TURSO_AUTH_TOKEN: ${{ secrets.TURSO_AUTH_TOKEN }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          PUBLIC_BASE_URL: ${{ secrets.PUBLIC_BASE_URL }}
+        run: python -m ingest.live_alerts

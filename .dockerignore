@@ -1,0 +1,22 @@
+# Ship data/hail + data/us_states.geojson (baked seed -> copied to the volume on first boot).
+# Exclude caches, logs, runtime user data, and dev cruft.
+data/_grib_cache/
+data/_live_cache/
+data/swaths/
+data/*.log
+data/_audit_log.parquet
+data/app.db
+data/subscriptions.jsonl
+data/alerts.jsonl
+data/outbox.jsonl
+data/_notified.json
+data/_alert_state.json
+**/__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+tests/
+*.md
+.git
+.gitignore
