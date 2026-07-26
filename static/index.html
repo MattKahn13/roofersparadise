@@ -70,13 +70,12 @@
   .legend b{display:block;font-size:9px;color:var(--mute);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
   .legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 
-  /* time bar -- slim, always visible, docked bottom */
-  .timebar{position:fixed;left:12px;right:12px;bottom:calc(var(--safeB) + 12px);z-index:18;border-radius:16px;padding:10px 14px;display:flex;align-items:center;gap:11px}
-  .timebar button{border:0;background:var(--navy);color:#fff;width:34px;height:34px;border-radius:10px;font-size:15px;cursor:pointer;flex:none}
-  .timebar .date{font-weight:800;font-size:14px;min-width:110px;text-align:center;font-variant-numeric:tabular-nums}
-  .timebar .date small{display:block;font-weight:600;font-size:10px;color:var(--mute)}
-  .timebar input[type=range]{flex:1;accent-color:var(--amber);min-width:40px}
-  .timebar .tot{font-size:11px;color:var(--mute);display:flex;align-items:center;gap:4px;white-space:nowrap;cursor:pointer}
+  /* time bar -- "All hail" toggle + calendar date-picker + prev/next storm-day */
+  .timebar{position:fixed;left:12px;right:12px;bottom:calc(var(--safeB) + 12px);z-index:18;border-radius:16px;padding:9px 12px;display:flex;align-items:center;gap:9px;max-width:520px;margin:0 auto}
+  .timebar button{border:0;background:var(--navy);color:#fff;width:38px;height:38px;border-radius:10px;font-size:17px;cursor:pointer;flex:none;line-height:1}
+  #t-all{width:auto;padding:0 15px;font-size:13px;font-weight:800;background:#e9edf1;color:var(--navy)}
+  #t-all.active{background:var(--amber)}
+  #t-picker{flex:1;min-width:40px;height:38px;border:1px solid #dde3e8;border-radius:10px;background:#fff;padding:0 10px;font-size:14px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
 
   /* bottom sheet -- hidden until you tap something, then slides up over the time bar */
   .sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;background:#fff;border-radius:20px 20px 0 0;
@@ -142,12 +141,10 @@
 </div>
 
 <div class="timebar glass">
-  <button id="t-play" title="Play">&#9654;</button>
-  <button id="t-prev" title="Previous storm">&#8249;</button>
-  <div class="date" id="t-date">--<small id="t-year"></small></div>
-  <input type="range" id="t-range" min="0" max="0" value="0">
-  <button id="t-next" title="Next storm">&#8250;</button>
-  <label class="tot"><input type="checkbox" id="t-total"> All</label>
+  <button id="t-all" class="active" title="Show all hail on record">All hail</button>
+  <button id="t-prev" title="Previous storm day">&#8249;</button>
+  <input type="date" id="t-picker" title="Pick a date to see that day's hail">
+  <button id="t-next" title="Next storm day">&#8250;</button>
 </div>
 
 <div class="sheet" id="sheet">
@@ -156,13 +153,12 @@
     <h2 id="sheet-title"></h2>
     <p class="sub" id="sheet-sub"></p>
     <div id="sheet-content"></div>
-    <button class="cta" id="sheet-cta">See every home in this hail zone<small>Your door-knock list, with the already-re-roofed homes removed</small></button>
   </div>
 </div>
 
 <div class="modal" id="modal"><div class="card" id="card"></div></div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="/static/app.js?v=11"></script>
+<script src="/static/app.js?v=12"></script>
 </body>
 </html>

@@ -12,19 +12,25 @@ const LEGEND_SIZE = '<b>Max hail</b><i style="background:#8f1010"></i>2&quot;+ '
 const LEGEND_FREQ = '<b>Storm-days (repeat hits)</b><i style="background:#4b1fa6"></i>8+ ' +
   '<i style="background:#7b52cc"></i>5 <i style="background:#a98fe0"></i>3 <i style="background:#d9d2f0"></i>2';
 
+// Carto basemaps -- app-friendly (OSM's public tiles block deployed apps -> blank map).
+const BASE_LIGHT = 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+const BASE_DARK  = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const map = new maplibregl.Map({
   container: 'map',
   style: {
     version: 8,
-    sources: { osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-      tileSize: 256, attribution: '&copy; OpenStreetMap' } },
+    sources: { osm: { type: 'raster', tiles: [BASE_LIGHT], tileSize: 256,
+      attribution: '&copy; OpenStreetMap &copy; CARTO' } },
     layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
   },
-  center: [-83.4, 28.2], zoom: 6, attributionControl: false
+  center: [-96, 38.5], zoom: 4, attributionControl: false,   // US-wide until we locate the user
+  dragRotate: false, pitchWithRotate: false, touchPitch: false, bearing: 0, pitch: 0
 });
+map.touchZoomRotate.disableRotation();   // north-up ALWAYS -- the map can never tilt "sideways"
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
-map.addControl(new maplibregl.GeolocateControl({
-  positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), 'top-right');
+const geolocate = new maplibregl.GeolocateControl({
+  positionOptions: { enableHighAccuracy: true }, trackUserLocation: false, showAccuracyCircle: false });
+map.addControl(geolocate, 'top-right');
 map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
 let DATES = [], curIdx = 0, totalMode = true, playTimer = null, searchMarker = null, fetchSeq = 0, winStart = '';
@@ -60,11 +66,24 @@ map.on('load', async () => {
 
   const d = await (await fetch('/api/dates')).json();
   DATES = d.dates || [];
-  const range = $('t-range');
-  range.max = Math.max(0, DATES.length - 1);
   curIdx = DATES.length - 1;
-  range.value = curIdx;
-  $('t-total').checked = true;
+  totalMode = true;
+  if (DATES.length) {
+    const pk = $('t-picker');
+    pk.min = DATES[0].date; pk.max = DATES[DATES.length - 1].date; pk.value = DATES[curIdx].date;
+  }
+  updateTime();
+
+  // Start at the user's own area if they allow location; otherwise keep the US-wide fallback.
+  await new Promise(res => {
+    if (!navigator.geolocation) return res();
+    let done = false; const finish = () => { if (!done) { done = true; res(); } };
+    const t = setTimeout(finish, 4500);
+    navigator.geolocation.getCurrentPosition(
+      p => { clearTimeout(t); map.jumpTo({ center: [p.coords.longitude, p.coords.latitude], zoom: 8 }); finish(); },
+      () => { clearTimeout(t); finish(); },
+      { enableHighAccuracy: false, timeout: 4000, maximumAge: 600000 });
+  });
   await refresh();
   const hide = () => { const l = $('loading'); if (l) l.classList.add('gone'); };
   map.once('idle', hide);
@@ -79,17 +98,10 @@ function mapBbox() {
   const b = map.getBounds();
   return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => v.toFixed(3)).join(',');
 }
-function updateLabel() {
+function updateTime() {
+  $('t-all').classList.toggle('active', totalMode);
   const dt = DATES[curIdx];
-  if (totalMode) {
-    $('t-date').firstChild.nodeValue = 'All hail';
-    const s = winStart || (DATES[0] && DATES[0].date);
-    $('t-year').textContent = (s ? human(s).replace(/,.*/, '') : '') +
-      ' to ' + (DATES.length ? human(DATES[DATES.length - 1].date).replace(', ', ' ') : '');
-  } else if (dt) {
-    $('t-date').firstChild.nodeValue = human(dt.date).replace(', ' + dt.date.slice(0, 4), '');
-    $('t-year').textContent = dt.date.slice(0, 4) + ' · ' + dt.cells.toLocaleString() + ' cells nationwide';
-  }
+  if (dt && !totalMode) $('t-picker').value = dt.date;
 }
 function spin(on) { $('updating').classList.toggle('on', on); }
 
@@ -104,7 +116,7 @@ async function refresh() {
     url += `&date=${dt.date}`;
   }
   url += '&metric=' + metric;
-  updateLabel();
+  updateTime();
   const seq = ++fetchSeq;
   spin(true);
   try {
@@ -116,20 +128,21 @@ async function refresh() {
 }
 function loadDate(i) {
   curIdx = Math.max(0, Math.min(DATES.length - 1, i));
-  $('t-range').value = curIdx;
   return refresh();
 }
 
-/* time controls */
-$('t-range').oninput = e => loadDate(+e.target.value);
-$('t-prev').onclick = () => loadDate(curIdx - 1);
-$('t-next').onclick = () => loadDate(curIdx + 1);
-$('t-total').onchange = e => { totalMode = e.target.checked; refresh(); };
-$('t-play').onclick = e => {
-  if (playTimer) { clearInterval(playTimer); playTimer = null; e.target.innerHTML = '&#9654;'; return; }
-  if (totalMode) { $('t-total').checked = false; totalMode = false; }
-  e.target.textContent = '❚❚';
-  playTimer = setInterval(() => loadDate(curIdx >= DATES.length - 1 ? 0 : curIdx + 1), 1100);
+/* time controls: "All hail" default + calendar date-picker + prev/next storm-day (no autoplay) */
+$('t-all').onclick = () => { totalMode = true; updateTime(); refresh(); };
+$('t-prev').onclick = () => { totalMode = false; loadDate(curIdx - 1); };
+$('t-next').onclick = () => { totalMode = false; loadDate(curIdx + 1); };
+$('t-picker').onchange = e => {
+  const iso = e.target.value;
+  if (!iso || !DATES.length) return;
+  totalMode = false;
+  let i = DATES.findIndex(x => x.date === iso);       // exact storm-day
+  if (i < 0) i = DATES.findIndex(x => x.date > iso);  // else the next storm-day after it
+  if (i < 0) i = DATES.length - 1;                    // else the latest on record
+  loadDate(i);
 };
 
 function showBadge(pt, inches, label) {
@@ -178,29 +191,6 @@ function openSheet(title, sub, html) {
   $('sheet-content').innerHTML = html || ''; sheet.classList.add('open');
 }
 $('grip').onclick = () => sheet.classList.remove('open');
-$('sheet-cta').onclick = () => ghost('addresses');
-
-/* ghost doors -> waitlist modal (logs willingness to pay) */
-const LABELS = {
-  addresses: ['See every home in this hail zone', 'The exact homes under the hail, minus the ones that already got re-roofed -- your door-knock list, done.'],
-  phones: ['See homeowner phone numbers', 'Reach the homeowner before you drive out.']
-};
-function ghost(door) {
-  const [h, p] = LABELS[door];
-  fetch('/api/ghost', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ door: door + '_open', zone: '' }) });
-  $('card').innerHTML = `<h3>${h}</h3><p>${p}<br><br>Coming soon. Drop your email and you're first in line.</p>
-     <input id="g-email" type="email" placeholder="you@company.com (optional)">
-     <button class="go" onclick="submitGhost('${door}')">Notify me when it's ready</button>`;
-  $('modal').classList.add('on');
-}
-window.submitGhost = function (door) {
-  const email = $('g-email').value;
-  fetch('/api/ghost', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ door, email, zone: '' }) })
-    .then(() => { $('card').innerHTML = '<div class="ok">You\'re on the list. We\'ll email you the moment it opens.</div>';
-      setTimeout(() => $('modal').classList.remove('on'), 1500); });
-};
 $('modal').addEventListener('click', e => { if (e.target.id === 'modal') e.currentTarget.classList.remove('on'); });
 
 /* ---- accounts + live hail alerts (Google sign-in -> Resend email; the HailTrace "be there first" value) ---- */
@@ -292,9 +282,7 @@ if (location.search.includes('auth=ok')) {
 let dark = false;
 $('btn-layers').onclick = e => {
   dark = !dark;
-  const url = dark ? 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png'
-                   : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-  if (map.getSource('osm')) map.getSource('osm').setTiles([url]);
+  if (map.getSource('osm')) map.getSource('osm').setTiles([dark ? BASE_DARK : BASE_LIGHT]);
   e.currentTarget.classList.toggle('active', dark);
   e.currentTarget.textContent = dark ? 'Light' : 'Dark';
 };
