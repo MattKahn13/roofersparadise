@@ -13,3 +13,6 @@ Authlib==1.7.2
 itsdangerous==2.2.0
 python-multipart==0.0.32
 libsql-experimental>=0.0.40   # Turso/libSQL client; only imported when TURSO_DATABASE_URL is set
+geopandas==1.1.4              # ingest/states.py state-tagging (pulled in via scheduler import chain)
+pyproj==3.7.2
+pyogrio==0.13.0
