@@ -23,7 +23,7 @@ const map = new maplibregl.Map({
       attribution: '&copy; OpenStreetMap &copy; CARTO' } },
     layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
   },
-  center: [-96, 38.5], zoom: 4, attributionControl: false,   // US-wide until we locate the user
+  center: [-95, 30], zoom: 6, attributionControl: false,   // Gulf/Texas (hail-heavy) -- small bbox = fast first load; geolocate moves to the user if allowed
   dragRotate: false, pitchWithRotate: false, touchPitch: false, bearing: 0, pitch: 0
 });
 map.touchZoomRotate.disableRotation();   // north-up ALWAYS -- the map can never tilt "sideways"
