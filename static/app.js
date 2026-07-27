@@ -43,8 +43,16 @@ map.on('load', async () => {
   map.on('dataloading', e => { if (e.sourceId === 'hail') setBar('load'); });
   map.on('idle', () => setBar('done'));
 
-  const d = await (await fetch('/api/dates')).json();
-  DATES = d.dates || [];
+  // Reveal the map the moment it first settles (basemap up) -- hail tiles then stream in behind the
+  // progress bar. Registered BEFORE any await so it can't miss the first idle. Short hard fallback.
+  const hide = () => { const l = $('loading'); if (l) l.classList.add('gone'); };
+  map.once('idle', hide);
+  setTimeout(hide, 2500);
+
+  try {
+    const d = await (await fetch('/api/dates')).json();
+    DATES = d.dates || [];
+  } catch (_) { DATES = []; }
   curIdx = DATES.length - 1;
   totalMode = true;
   if (DATES.length) {
@@ -53,20 +61,8 @@ map.on('load', async () => {
   }
   updateTime();
   reloadTiles();   // apply the real date range now that DATES is loaded
-
-  // Start at the user's own area if they allow location; otherwise keep the Gulf/Texas default.
-  await new Promise(res => {
-    if (!navigator.geolocation) return res();
-    let done = false; const finish = () => { if (!done) { done = true; res(); } };
-    const t = setTimeout(finish, 4500);
-    navigator.geolocation.getCurrentPosition(
-      p => { clearTimeout(t); map.jumpTo({ center: [p.coords.longitude, p.coords.latitude], zoom: 8 }); finish(); },
-      () => { clearTimeout(t); finish(); },
-      { enableHighAccuracy: false, timeout: 4000, maximumAge: 600000 });
-  });
-  const hide = () => { const l = $('loading'); if (l) l.classList.add('gone'); };
-  map.once('idle', hide);
-  setTimeout(hide, 15000);
+  // No auto-geolocation prompt on load (it delayed first paint + double-loaded tiles); the
+  // crosshair button still lets the user jump to their location on demand.
 });
 
 function human(iso) {
