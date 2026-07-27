@@ -9,17 +9,19 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 try:                                    # uvicorn runs app.py as a top-level module (cwd=roofersparadise)
     from ingest.contour import build_swaths_cells, FL_BBOX, FREQ_BANDS
+    from ingest.tiles import render_tile
     from ingest import store
     from auth import router as auth_router, current_user, _db as _appdb
     import scheduler
 except ImportError as _primary_err:     # ...but tests import it as a package
     try:
         from roofersparadise.ingest.contour import build_swaths_cells, FL_BBOX, FREQ_BANDS
+        from roofersparadise.ingest.tiles import render_tile
         from roofersparadise.ingest import store
         from roofersparadise.auth import router as auth_router, current_user, _db as _appdb
         from roofersparadise import scheduler
@@ -34,6 +36,7 @@ SWATHS = os.path.join(DATA, "swaths")
 CLICKS = os.path.join(HERE, "ghost_clicks.jsonl")
 SUBS = os.path.join(DATA, "subscriptions.jsonl")   # roofers monitoring a ZIP for live hail
 ALERTS = os.path.join(DATA, "alerts.jsonl")         # fired alerts (written by ingest/live_alerts.py)
+CUM = os.path.join(DATA, "cumulative.parquet").replace("\\", "/")   # precomputed grid for fast tiles
 
 app = FastAPI(title="RoofersParadise v2")
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SESSION_SECRET", "dev-insecure-secret"))
@@ -57,6 +60,33 @@ def _q(sql):
     except Exception as e:
         print(f"[api] duckdb read failed, returning empty: {str(e)[:160]}", flush=True)
         return []
+
+
+@app.get("/tiles/{z}/{x}/{y}.png")
+def tile_png(z: int, x: int, y: int, metric: str = "size", date: str | None = None):
+    """Raster hail tile for the map -- MapLibre requests these per viewport-tile so the map loads
+    progressively and only what's on screen. Empty tile -> 204 (rendered blank)."""
+    try:
+        png = render_tile(_CON.cursor(), z, x, y, metric=metric, date=date)
+    except Exception as e:
+        print(f"[tile] {z}/{x}/{y} m={metric} d={date} failed: {str(e)[:160]}", flush=True)
+        png = None
+    if not png:
+        return Response(status_code=204)
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"})
+
+
+@app.get("/api/point")
+def api_point(lat: float, lng: float):
+    """Nearest cumulative cell to a tapped point (raster tiles carry no clickable features)."""
+    rows = _q(f"""select max_in, hits from read_parquet('{CUM}')
+                  where lat between {lat - 0.03} and {lat + 0.03}
+                    and lng between {lng - 0.03} and {lng + 0.03}
+                  order by (lat - {lat}) * (lat - {lat}) + (lng - {lng}) * (lng - {lng}) limit 1""")
+    if rows and rows[0][0] is not None:
+        return {"max_in": round(float(rows[0][0]), 2), "hits": int(rows[0][1])}
+    return {"max_in": None, "hits": None}
 
 
 @app.get("/")

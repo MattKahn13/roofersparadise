@@ -24,6 +24,9 @@
   .loading .spin{width:46px;height:46px;border:4px solid rgba(255,255,255,.22);border-top-color:var(--amber);
     border-radius:50%;animation:spin 1s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
+  /* top progress bar -- creeps forward while map tiles load, completes on idle */
+  .progress{position:fixed;top:0;left:0;height:3px;width:0;background:var(--amber);z-index:60;
+    opacity:0;box-shadow:0 0 8px var(--amber);pointer-events:none}
   .glass{background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
     box-shadow:0 2px 12px rgba(0,0,0,.16)}
 
@@ -104,6 +107,7 @@
 </head>
 <body>
 <div id="map"></div>
+<div class="progress" id="progress"></div>
 
 <div class="loading" id="loading">
   <div class="spin"></div>
@@ -159,6 +163,6 @@
 <div class="modal" id="modal"><div class="card" id="card"></div></div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="/static/app.js?v=13"></script>
+<script src="/static/app.js?v=14"></script>
 </body>
 </html>

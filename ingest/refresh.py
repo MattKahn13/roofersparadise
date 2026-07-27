@@ -19,6 +19,12 @@ def refresh(today: dt.date | None = None, days: int = 3, workers: int = 4) -> No
     today = today or dt.datetime.now(dt.timezone.utc).date()
     ds = trailing_dates(today, days)
     run(ds[0], ds[-1], workers=workers, run_id=f"refresh-{ds[-1]:%Y%m%d}")
+    # rebuild the cumulative grid so the map tiles reflect the new data
+    try:
+        from .cumulative import build as build_cumulative
+    except ImportError:
+        from roofersparadise.ingest.cumulative import build as build_cumulative
+    build_cumulative()
 
 
 if __name__ == "__main__":

@@ -1,12 +1,8 @@
-/* RoofersParadise hail map -- MapLibre spatial cockpit (v5, viewport loading).
-   Swaths are contoured on demand for the CURRENT MAP VIEWPORT, so it scales to the whole
-   US: pan/zoom -> refetch only what's on screen. Stale responses are dropped. */
+/* RoofersParadise hail map -- MapLibre with dynamic RASTER TILES (/tiles/{z}/{x}/{y}.png).
+   Tiles load per viewport-tile, so the map streams in progressively and only loads what's on
+   screen; zooming shows the coarse parent tile (blurry) until the sharp child arrives. Colors
+   are baked into the tiles server-side to match the legend below. */
 
-const NWS = ['interpolate', ['linear'], ['get', 'hail_in'],
-  0.75, '#ffd24d', 1.0, '#fb9a3c', 1.5, '#f2542d', 2.0, '#c01818', 2.75, '#7a0c0c'];
-// "hot zones": color by how many storm-days hit a cell (repeat-hit = highest opportunity)
-const FREQ = ['interpolate', ['linear'], ['get', 'hits'],
-  2, '#d9d2f0', 3, '#a98fe0', 5, '#7b52cc', 8, '#4b1fa6'];
 const LEGEND_SIZE = '<b>Max hail</b><i style="background:#8f1010"></i>2&quot;+ ' +
   '<i style="background:#f2542d"></i>1.5&quot; <i style="background:#fb9a3c"></i>1&quot; <i style="background:#ffd24d"></i>0.75&quot;';
 const LEGEND_FREQ = '<b>Storm-days (repeat hits)</b><i style="background:#4b1fa6"></i>8+ ' +
@@ -33,36 +29,19 @@ const geolocate = new maplibregl.GeolocateControl({
 map.addControl(geolocate, 'top-right');
 map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
-let DATES = [], curIdx = 0, totalMode = true, playTimer = null, searchMarker = null, fetchSeq = 0, winStart = '';
+let DATES = [], curIdx = 0, totalMode = true, searchMarker = null;
 let metric = 'size';   // 'size' (max hail) | 'frequency' (repeat-hit hot zones)
 const $ = id => document.getElementById(id);
 
 map.on('load', async () => {
-  map.addSource('swaths', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
-  map.addLayer({ id: 'swath-fill', type: 'fill', source: 'swaths',
-    paint: { 'fill-color': NWS, 'fill-opacity': 0.72 } });
-  map.addLayer({ id: 'swath-line', type: 'line', source: 'swaths',
-    paint: { 'line-color': '#5a2a08', 'line-width': 1.1, 'line-opacity': 0.7 } });
+  map.addSource('hail', { type: 'raster', tiles: [tileUrl()], tileSize: 256,
+    minzoom: 0, maxzoom: 22, attribution: 'Hail: NOAA MRMS' });
+  map.addLayer({ id: 'hail', type: 'raster', source: 'hail',
+    paint: { 'raster-opacity': 0.82, 'raster-resampling': 'linear' } });   // linear = smooth / blur-in
 
-  map.on('click', 'swath-fill', e => {
-    const p = e.features[0].properties;
-    if (metric === 'frequency') {
-      showBadge(e.point, null, `${p.hits}+ storms`);
-      openSheet(`${p.hits}+ storm-days here`, 'How often hail has hit this spot -- repeat-hit zones are the highest-opportunity neighborhoods.', '');
-    } else {
-      const inches = +p.hail_in;
-      showBadge(e.point, inches);
-      const dt = DATES[curIdx];
-      openSheet(`${inches.toFixed(2)}" hail`,
-        `${totalMode ? 'Worst hail recorded here' : (dt ? human(dt.date) : '')} -- radar-estimated max stone size.`, '');
-    }
-  });
-  map.on('mouseenter', 'swath-fill', () => map.getCanvas().style.cursor = 'pointer');
-  map.on('mouseleave', 'swath-fill', () => map.getCanvas().style.cursor = '');
-
-  // refetch swaths for the new viewport whenever the map settles after a pan/zoom
-  let moveT;
-  map.on('moveend', () => { clearTimeout(moveT); moveT = setTimeout(refresh, 350); });
+  map.on('click', onMapClick);
+  map.on('dataloading', e => { if (e.sourceId === 'hail') setBar('load'); });
+  map.on('idle', () => setBar('done'));
 
   const d = await (await fetch('/api/dates')).json();
   DATES = d.dates || [];
@@ -73,8 +52,9 @@ map.on('load', async () => {
     pk.min = DATES[0].date; pk.max = DATES[DATES.length - 1].date; pk.value = DATES[curIdx].date;
   }
   updateTime();
+  reloadTiles();   // apply the real date range now that DATES is loaded
 
-  // Start at the user's own area if they allow location; otherwise keep the US-wide fallback.
+  // Start at the user's own area if they allow location; otherwise keep the Gulf/Texas default.
   await new Promise(res => {
     if (!navigator.geolocation) return res();
     let done = false; const finish = () => { if (!done) { done = true; res(); } };
@@ -84,7 +64,6 @@ map.on('load', async () => {
       () => { clearTimeout(t); finish(); },
       { enableHighAccuracy: false, timeout: 4000, maximumAge: 600000 });
   });
-  await refresh();
   const hide = () => { const l = $('loading'); if (l) l.classList.add('gone'); };
   map.once('idle', hide);
   setTimeout(hide, 15000);
@@ -94,45 +73,53 @@ function human(iso) {
   const [y, m, dd] = iso.split('-');
   return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+m - 1] + ' ' + (+dd) + ', ' + y;
 }
-function mapBbox() {
-  const b = map.getBounds();
-  return [b.getWest(), b.getSouth(), b.getEast(), b.getNorth()].map(v => v.toFixed(3)).join(',');
+// tile URL for the current metric + date ('' date = cumulative "all hail")
+function tileUrl() {
+  const d = (!totalMode && DATES[curIdx]) ? '&date=' + DATES[curIdx].date : '';
+  return `${location.origin}/tiles/{z}/{x}/{y}.png?metric=${metric}${d}`;
+}
+function reloadTiles() {
+  updateTime();
+  const src = map.getSource('hail');
+  if (src) src.setTiles([tileUrl()]);
+}
+// top progress bar (nprogress-style): creeps to 90% while tiles load, completes on idle
+function setBar(state) {
+  const b = $('progress'); if (!b) return;
+  if (state === 'load') {
+    if (b._done) { clearTimeout(b._done); b._done = null; }
+    b.style.transition = 'none'; b.style.opacity = '1'; b.style.width = '8%';
+    requestAnimationFrame(() => { b.style.transition = 'width 9s cubic-bezier(.1,.7,.25,1)'; b.style.width = '90%'; });
+  } else {
+    b.style.transition = 'width .3s ease'; b.style.width = '100%';
+    b._done = setTimeout(() => { b.style.opacity = '0'; b.style.width = '0'; }, 400);
+  }
+}
+// tap the map -> nearest cell's value (raster tiles carry no clickable features)
+async function onMapClick(e) {
+  const { lat, lng } = e.lngLat;
+  let r; try { r = await (await fetch(`/api/point?lat=${lat}&lng=${lng}`)).json(); } catch (_) { return; }
+  if (metric === 'frequency') {
+    if (r.hits) { showBadge(e.point, null, `${r.hits} storm-days`);
+      openSheet(`${r.hits} storm-days here`, 'How often hail has hit this spot -- repeat-hit zones are the highest-opportunity neighborhoods.', ''); }
+  } else if (r.max_in) {
+    showBadge(e.point, r.max_in);
+    const when = totalMode ? 'Worst hail recorded here' : (DATES[curIdx] ? human(DATES[curIdx].date) : '');
+    openSheet(`${r.max_in.toFixed(2)}" hail`, `${when} -- radar-estimated max stone size.`, '');
+  }
 }
 function updateTime() {
   $('t-all').classList.toggle('active', totalMode);
   const dt = DATES[curIdx];
   if (dt && !totalMode) $('t-picker').value = dt.date;
 }
-function spin(on) { $('updating').classList.toggle('on', on); }
-
-async function refresh() {
-  if (!DATES.length) return;
-  const dt = DATES[curIdx];
-  let url = `/api/hail?bbox=${mapBbox()}`;
-  if (totalMode) {
-    winStart = DATES[0].date;   // full scope -- every storm on record for this viewport
-    url += `&start=${winStart}&end=${DATES[DATES.length - 1].date}`;
-  } else {
-    url += `&date=${dt.date}`;
-  }
-  url += '&metric=' + metric;
-  updateTime();
-  const seq = ++fetchSeq;
-  spin(true);
-  try {
-    const fc = await (await fetch(url)).json();
-    if (seq !== fetchSeq) return;            // a newer request started -- drop this stale one
-    map.getSource('swaths').setData(fc);
-  } catch (e) { /* leave prior swaths on transient error */ }
-  finally { if (seq === fetchSeq) spin(false); }
-}
 function loadDate(i) {
   curIdx = Math.max(0, Math.min(DATES.length - 1, i));
-  return refresh();
+  return reloadTiles();
 }
 
 /* time controls: "All hail" default + calendar date-picker + prev/next storm-day (no autoplay) */
-$('t-all').onclick = () => { totalMode = true; updateTime(); refresh(); };
+$('t-all').onclick = () => { totalMode = true; reloadTiles(); };
 $('t-prev').onclick = () => { totalMode = false; loadDate(curIdx - 1); };
 $('t-next').onclick = () => { totalMode = false; loadDate(curIdx + 1); };
 $('t-picker').onchange = e => {
@@ -156,10 +143,9 @@ function showBadge(pt, inches, label) {
 function toggleMetric() {
   metric = metric === 'size' ? 'frequency' : 'size';
   const freq = metric === 'frequency';
-  map.setPaintProperty('swath-fill', 'fill-color', freq ? FREQ : NWS);
   $('legend').innerHTML = freq ? LEGEND_FREQ : LEGEND_SIZE;
   const b = $('btn-mode'); b.classList.toggle('active', freq); b.textContent = freq ? 'Hot zones' : 'Hail size';
-  refresh();
+  reloadTiles();
 }
 $('btn-mode').onclick = toggleMetric;
 
