@@ -10,4 +10,7 @@ if [ ! -d "$DATA_DIR/hail" ] || [ -z "$(ls -A "$DATA_DIR/hail" 2>/dev/null)" ]; 
   cp -r /app/data/. "$DATA_DIR"/ 2>/dev/null || true
   echo "start.sh: seed done ($(ls "$DATA_DIR/hail" 2>/dev/null | wc -l) year dirs)"
 fi
+# Tiles read cumulative.parquet. The volume may have been seeded on an earlier deploy (before this
+# file existed) and seeding above is skipped when hail/ is present -- so ALWAYS sync it from the image.
+[ -f /app/data/cumulative.parquet ] && cp -f /app/data/cumulative.parquet "$DATA_DIR/cumulative.parquet" 2>/dev/null || true
 exec uvicorn app:app --host 0.0.0.0 --port "${PORT:-8080}"
