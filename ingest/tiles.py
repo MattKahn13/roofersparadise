@@ -72,10 +72,15 @@ def _dilate(a: np.ndarray, k: int) -> np.ndarray:
     return c
 
 
-def render_tile(con, z: int, x: int, y: int, metric: str = "size", date: str | None = None):
-    """PNG bytes for the tile, or None if there is no hail in it (serve as transparent/204)."""
+def render_tile(con, z: int, x: int, y: int, metric: str = "size",
+                date: str | None = None, start: str | None = None, end: str | None = None):
+    """PNG bytes for the tile, or None if there is no hail in it (serve as transparent/204).
+    Time window: start/end (a range, e.g. one week) > date (single day) > cumulative 'all hail'."""
     w, s, e, n = tile_bbox(z, x, y)
-    if date:
+    if start and end:
+        col, src, minv, ramp = "hail_in", f"read_parquet('{HAIL_GLOB}')", 0.75, SIZE_RAMP
+        where = f"date BETWEEN '{start}' AND '{end}' AND hail_in IS NOT NULL AND state IS NOT NULL"
+    elif date:
         col, src, minv, ramp = "hail_in", f"read_parquet('{HAIL_GLOB}')", 0.75, SIZE_RAMP
         where = f"date = '{date}' AND hail_in IS NOT NULL AND state IS NOT NULL"   # US land only
     elif metric == "frequency":

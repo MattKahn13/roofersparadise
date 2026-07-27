@@ -28,8 +28,17 @@ const geolocate = new maplibregl.GeolocateControl({
 map.addControl(geolocate, 'top-right');
 map.addControl(new maplibregl.AttributionControl({ compact: true }), 'bottom-right');
 
-let DATES = [], curIdx = 0, totalMode = true, searchMarker = null;
+let DATES = [], totalMode = true, searchMarker = null, weekStart = '', minWeek = '', maxWeek = '';
 let metric = 'size';   // 'size' (max hail) | 'frequency' (repeat-hit hot zones)
+// UTC-safe week math (Monday-anchored)
+function addDays(iso, k) { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + k); return d.toISOString().slice(0, 10); }
+function mondayOf(iso) { const d = new Date(iso + 'T00:00:00Z'); const off = (d.getUTCDay() + 6) % 7; d.setUTCDate(d.getUTCDate() - off); return d.toISOString().slice(0, 10); }
+function weekLabel(mon) {
+  const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const a = new Date(mon + 'T00:00:00Z'), b = new Date(addDays(mon, 6) + 'T00:00:00Z');
+  const same = a.getUTCMonth() === b.getUTCMonth();
+  return `${M[a.getUTCMonth()]} ${a.getUTCDate()}–${same ? '' : M[b.getUTCMonth()] + ' '}${b.getUTCDate()}, ${b.getUTCFullYear()}`;
+}
 const $ = id => document.getElementById(id);
 
 map.on('load', async () => {
@@ -52,11 +61,13 @@ map.on('load', async () => {
     const d = await (await fetch('/api/dates')).json();
     DATES = d.dates || [];
   } catch (_) { DATES = []; }
-  curIdx = DATES.length - 1;
   totalMode = true;
   if (DATES.length) {
+    minWeek = mondayOf(DATES[0].date);
+    maxWeek = mondayOf(DATES[DATES.length - 1].date);
+    weekStart = maxWeek;
     const pk = $('t-picker');
-    pk.min = DATES[0].date; pk.max = DATES[DATES.length - 1].date; pk.value = DATES[curIdx].date;
+    pk.min = DATES[0].date; pk.max = DATES[DATES.length - 1].date; pk.value = weekStart;
   }
   updateTime();
   reloadTiles();   // apply the real date range now that DATES is loaded
@@ -70,7 +81,7 @@ function human(iso) {
 }
 // tile URL for the current metric + date ('' date = cumulative "all hail")
 function tileUrl() {
-  const d = (!totalMode && DATES[curIdx]) ? '&date=' + DATES[curIdx].date : '';
+  const d = (!totalMode && weekStart) ? `&start=${weekStart}&end=${addDays(weekStart, 6)}` : '';
   return `${location.origin}/tiles/{z}/{x}/{y}.png?metric=${metric}${d}&r=3`;   // r = tile-render version (cache-bust)
 }
 function reloadTiles() {
@@ -108,27 +119,24 @@ async function onMapClick(e) {
 }
 function updateTime() {
   $('t-all').classList.toggle('active', totalMode);
-  const dt = DATES[curIdx];
-  if (dt && !totalMode) $('t-picker').value = dt.date;
+  const wl = $('t-week');
+  if (!totalMode && weekStart) {
+    $('t-picker').value = weekStart;
+    if (wl) { wl.textContent = 'Week of ' + weekLabel(weekStart); wl.style.display = ''; }
+  } else if (wl) {
+    wl.style.display = 'none';
+  }
 }
-function loadDate(i) {
-  curIdx = Math.max(0, Math.min(DATES.length - 1, i));
+function setWeek(wk) {
+  weekStart = wk < minWeek ? minWeek : (wk > maxWeek ? maxWeek : wk);
   return reloadTiles();
 }
 
-/* time controls: "All hail" default + calendar date-picker + prev/next storm-day (no autoplay) */
+/* time controls: "All hail" default + calendar (snaps to that week) + prev/next WEEK */
 $('t-all').onclick = () => { totalMode = true; reloadTiles(); };
-$('t-prev').onclick = () => { totalMode = false; loadDate(curIdx - 1); };
-$('t-next').onclick = () => { totalMode = false; loadDate(curIdx + 1); };
-$('t-picker').onchange = e => {
-  const iso = e.target.value;
-  if (!iso || !DATES.length) return;
-  totalMode = false;
-  let i = DATES.findIndex(x => x.date === iso);       // exact storm-day
-  if (i < 0) i = DATES.findIndex(x => x.date > iso);  // else the next storm-day after it
-  if (i < 0) i = DATES.length - 1;                    // else the latest on record
-  loadDate(i);
-};
+$('t-prev').onclick = () => { totalMode = false; setWeek(addDays(weekStart || maxWeek, -7)); };
+$('t-next').onclick = () => { totalMode = false; setWeek(addDays(weekStart || minWeek, 7)); };
+$('t-picker').onchange = e => { if (e.target.value) { totalMode = false; setWeek(mondayOf(e.target.value)); } };
 
 function showBadge(pt, inches, label) {
   const b = $('hailbadge');

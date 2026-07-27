@@ -88,6 +88,10 @@
   #t-all{width:auto;padding:0 15px;font-size:13px;font-weight:800;background:#e9edf1;color:var(--navy)}
   #t-all.active{background:var(--amber)}
   #t-picker{flex:1;min-width:40px;height:44px;border:1px solid #dde3e8;border-radius:10px;background:#fff;padding:0 10px;font-size:14px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+  /* selected-week label, floats just above the time bar */
+  #t-week{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--safeB) + 80px);z-index:18;
+    background:var(--navy);color:#fff;font-size:12px;font-weight:800;padding:5px 13px;border-radius:14px;
+    box-shadow:0 2px 10px rgba(0,0,0,.25);display:none;white-space:nowrap}
 
   /* bottom sheet -- hidden until you tap something, then slides up over the time bar */
   .sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;background:#fff;border-radius:20px 20px 0 0;
@@ -158,10 +162,11 @@
 
 <div class="timebar glass">
   <button id="t-all" class="active" title="Show all hail on record">All hail</button>
-  <button id="t-prev" title="Previous storm day">&#8249;</button>
-  <input type="date" id="t-picker" title="Pick a date to see that day's hail">
-  <button id="t-next" title="Next storm day">&#8250;</button>
+  <button id="t-prev" title="Previous week">&#8249;</button>
+  <input type="date" id="t-picker" title="Pick a date to see that week's hail">
+  <button id="t-next" title="Next week">&#8250;</button>
 </div>
+<div id="t-week"></div>
 
 <div class="sheet" id="sheet">
   <div class="grip" id="grip"></div>
@@ -175,6 +180,6 @@
 <div class="modal" id="modal"><div class="card" id="card"></div></div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="/static/app.js?v=19"></script>
+<script src="/static/app.js?v=20"></script>
 </body>
 </html>

@@ -62,14 +62,22 @@ def _q(sql):
         return []
 
 
+def _valid_date(d):
+    """Accept only YYYY-MM-DD (these strings go into SQL) -- else drop it."""
+    return d if (d and len(d) == 10 and d[4] == "-" and d[7] == "-"
+                 and d.replace("-", "").isdigit()) else None
+
+
 @app.get("/tiles/{z}/{x}/{y}.png")
-def tile_png(z: int, x: int, y: int, metric: str = "size", date: str | None = None):
+def tile_png(z: int, x: int, y: int, metric: str = "size",
+             date: str | None = None, start: str | None = None, end: str | None = None):
     """Raster hail tile for the map -- MapLibre requests these per viewport-tile so the map loads
-    progressively and only what's on screen. Empty tile -> 204 (rendered blank)."""
+    progressively and only what's on screen. start/end = a week window. Empty tile -> 204."""
+    date, start, end = _valid_date(date), _valid_date(start), _valid_date(end)
     try:
-        png = render_tile(_CON.cursor(), z, x, y, metric=metric, date=date)
+        png = render_tile(_CON.cursor(), z, x, y, metric=metric, date=date, start=start, end=end)
     except Exception as e:
-        print(f"[tile] {z}/{x}/{y} m={metric} d={date} failed: {str(e)[:160]}", flush=True)
+        print(f"[tile] {z}/{x}/{y} m={metric} d={date} {start}..{end} failed: {str(e)[:160]}", flush=True)
         png = None
     if not png:
         return Response(status_code=204)
