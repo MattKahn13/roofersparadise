@@ -34,9 +34,16 @@
   .topbar{position:fixed;left:12px;right:12px;top:calc(var(--safeT) + 12px);z-index:20;display:flex;gap:10px;align-items:center}
   .brand{font-weight:800;font-size:15px;color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.6);white-space:nowrap}
   .brand span{color:var(--amber)}
-  .search{flex:1;display:flex;align-items:center;gap:8px;border-radius:24px;padding:11px 15px}
+  .search-wrap{flex:1;position:relative}
+  .search{width:100%;display:flex;align-items:center;gap:8px;border-radius:24px;padding:11px 15px}
   .search input{border:0;background:transparent;outline:none;font-size:15px;width:100%;color:var(--ink)}
   .search .ic{color:var(--mute);font-size:15px}
+  /* type-ahead suggestions dropdown */
+  .suggest{position:absolute;left:0;right:0;top:calc(100% + 6px);border-radius:14px;padding:5px;
+    display:none;max-height:52vh;overflow:auto;z-index:30}
+  .suggest.on{display:block}
+  .sug-item{padding:11px 12px;font-size:14px;line-height:1.25;cursor:pointer;border-radius:9px;color:var(--ink)}
+  .sug-item:hover,.sug-item:active{background:rgba(18,32,46,.07)}
   #btn-alert{flex:none;border:0;border-radius:50%;width:44px;height:44px;font-size:19px;cursor:pointer;color:var(--navy);position:relative}
   #btn-alert.on{background:var(--amber)}
 
@@ -45,10 +52,8 @@
   .maplibregl-ctrl-group button{width:42px !important;height:42px !important}
   .maplibregl-ctrl-top-right{top:calc(var(--safeT) + 62px) !important;right:12px !important}
 
-  /* layers toggle (custom, sits under the standard controls) */
-  #btn-layers{position:fixed;right:12px;top:calc(var(--safeT) + 200px);z-index:20;width:42px;height:42px;border-radius:12px;border:0;font-size:13px;font-weight:700;cursor:pointer;color:var(--navy)}
-  #btn-layers.active{background:var(--navy);color:#fff}
-  #btn-mode{position:fixed;right:12px;top:calc(var(--safeT) + 250px);z-index:20;height:42px;padding:0 12px;border-radius:12px;border:0;font-size:12px;font-weight:700;cursor:pointer;color:var(--navy);white-space:nowrap}
+  /* hot-zones toggle (sits under the standard map controls) */
+  #btn-mode{position:fixed;right:12px;top:calc(var(--safeT) + 200px);z-index:20;height:42px;padding:0 13px;border-radius:12px;border:0;font-size:12px;font-weight:700;cursor:pointer;color:var(--navy);white-space:nowrap}
   #btn-mode.active{background:#4b1fa6;color:#fff}
 
   /* viewport-refresh indicator */
@@ -117,19 +122,21 @@
 
 <div class="topbar">
   <div class="brand">Roofers<span>Paradise</span></div>
-  <div class="search glass">
-    <span class="ic">&#9906;</span>
-    <input id="q" placeholder="Search an address" autocomplete="off" inputmode="search">
+  <div class="search-wrap">
+    <div class="search glass">
+      <span class="ic">&#9906;</span>
+      <input id="q" placeholder="Search your city or address" autocomplete="off" inputmode="search">
+    </div>
+    <div class="suggest glass" id="suggest"></div>
   </div>
-  <button id="btn-alert" class="glass" title="Get alerted when hail hits this area">&#128276;</button>
+  <button id="btn-alert" class="glass" title="Get emailed when hail hits your area">&#128276;</button>
 </div>
 
-<button id="btn-layers" class="glass" title="Toggle dark map">Dark</button>
-<button id="btn-mode" class="glass" title="Toggle repeat-hit hot zones">Hail size</button>
+<button id="btn-mode" class="glass" title="Show where hail hits most often">Hail size</button>
 
 <div class="caption glass" id="caption">
-  <b>Every place hail has hit</b>, colored by size (yellow = small, red = giant). Tap a zone for detail, or search an address to see when it was hit.
-  <div style="font-size:11px;color:var(--mute);margin-top:5px">Data: NOAA MRMS radar (2023-present). Not affiliated with the National Weather Service.</div>
+  <b>Where hail has hit</b> &mdash; yellow = small, red = giant. <b>Search your city</b> or <b>tap the map</b> to see any spot's hail history.
+  <div style="font-size:11px;color:var(--mute);margin-top:5px">Free. Data: NOAA MRMS radar (2023-present). Not affiliated with the National Weather Service.</div>
   <span class="x" onclick="this.parentNode.remove()">&times;</span>
 </div>
 
@@ -163,6 +170,6 @@
 <div class="modal" id="modal"><div class="card" id="card"></div></div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="/static/app.js?v=15"></script>
+<script src="/static/app.js?v=16"></script>
 </body>
 </html>

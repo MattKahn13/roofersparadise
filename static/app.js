@@ -8,9 +8,8 @@ const LEGEND_SIZE = '<b>Max hail</b><i style="background:#8f1010"></i>2&quot;+ '
 const LEGEND_FREQ = '<b>Storm-days (repeat hits)</b><i style="background:#4b1fa6"></i>8+ ' +
   '<i style="background:#7b52cc"></i>5 <i style="background:#a98fe0"></i>3 <i style="background:#d9d2f0"></i>2';
 
-// Carto basemaps -- app-friendly (OSM's public tiles block deployed apps -> blank map).
+// Carto basemap -- app-friendly (OSM's public tiles block deployed apps -> blank map).
 const BASE_LIGHT = 'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
-const BASE_DARK  = 'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
 const map = new maplibregl.Map({
   container: 'map',
   style: {
@@ -147,24 +146,59 @@ $('btn-mode').onclick = toggleMetric;
 
 /* address search -> fly there (moveend refetches viewport) + hail history */
 const q = $('q');
-q.addEventListener('keydown', async e => {
-  if (e.key !== 'Enter' || !q.value.trim()) return;
-  q.blur();
-  const r = await (await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='
-    + encodeURIComponent(q.value))).json();
-  if (!r.length) { openSheet('Address not found', 'Try a street address or city.', ''); return; }
-  const lat = +r[0].lat, lng = +r[0].lon;
+const sug = $('suggest');
+let sugItems = [], sugT = null;
+function hideSuggest() { sug.classList.remove('on'); sug.innerHTML = ''; sugItems = []; }
+
+// type-ahead: US places via Photon (free geocoder built for autocomplete, no key)
+async function fetchSuggest(text) {
+  try {
+    const r = await (await fetch(`https://photon.komoot.io/api/?q=${encodeURIComponent(text)}&limit=6&lang=en&lat=39&lon=-98`)).json();
+    return (r.features || [])
+      .filter(f => f.properties && f.properties.countrycode === 'US')
+      .map(f => {
+        const p = f.properties;
+        const label = [p.name, p.city || p.county, p.state].filter(Boolean).join(', ');
+        return { lng: f.geometry.coordinates[0], lat: f.geometry.coordinates[1], label };
+      });
+  } catch (_) { return []; }
+}
+q.addEventListener('input', () => {
+  const text = q.value.trim();
+  clearTimeout(sugT);
+  if (text.length < 3) { hideSuggest(); return; }
+  sugT = setTimeout(async () => {
+    if (q.value.trim() !== text) return;
+    const items = await fetchSuggest(text);
+    if (!items.length) { hideSuggest(); return; }
+    sugItems = items;
+    sug.innerHTML = items.map((it, i) => `<div class="sug-item" data-i="${i}">${it.label}</div>`).join('');
+    sug.classList.add('on');
+  }, 250);
+});
+sug.addEventListener('click', e => {
+  const el = e.target.closest('.sug-item'); if (!el) return;
+  const it = sugItems[+el.dataset.i]; if (it) goTo(it.lng, it.lat, it.label);
+});
+q.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); if (sugItems[0]) goTo(sugItems[0].lng, sugItems[0].lat, sugItems[0].label); }
+  else if (e.key === 'Escape') hideSuggest();
+});
+document.addEventListener('click', e => { if (!e.target.closest('.search-wrap')) hideSuggest(); });
+
+async function goTo(lng, lat, label) {
+  q.value = label; q.blur(); hideSuggest();
   map.flyTo({ center: [lng, lat], zoom: 11 });
   if (searchMarker) searchMarker.remove();
   searchMarker = new maplibregl.Marker({ color: '#f2a71b' }).setLngLat([lng, lat]).addTo(map);
-  const h = await (await fetch(`/api/address_history?lat=${lat}&lng=${lng}`)).json();
+  let h = { hits: [] };
+  try { h = await (await fetch(`/api/address_history?lat=${lat}&lng=${lng}`)).json(); } catch (_) {}
   const rows = (h.hits || []).map(x =>
-    `<div class="row"><span>${human(x.date)}</span><b>${x.max_in.toFixed(2)}"</b></div>`).join('');
-  const label = r[0].display_name.split(',').slice(0, 2).join(',');
+    `<div class="row"><span>${human(x.date)}</span><b>${(+x.max_in).toFixed(2)}"</b></div>`).join('');
   const report = `<button class="cta" style="background:#12202e;margin-top:14px" onclick="window.open('/static/report.html?lat=${lat}&lng=${lng}&address='+encodeURIComponent(${JSON.stringify(label)}),'_blank')">Get the full hail report<small>Printable -- hand it to the homeowner or their adjuster</small></button>`;
   openSheet(label,
     h.hits && h.hits.length ? `Hit by hail ${h.hits.length} time(s):` : 'No radar-detected hail on record here.', rows + report);
-});
+}
 
 /* bottom sheet */
 const sheet = $('sheet');
@@ -260,11 +294,3 @@ if (location.search.includes('auth=ok')) {
   loadMe().then(() => { if (ME) { alertCardSignedIn(); $('modal').classList.add('on'); } });
 }
 
-/* layers: dark basemap toggle */
-let dark = false;
-$('btn-layers').onclick = e => {
-  dark = !dark;
-  if (map.getSource('osm')) map.getSource('osm').setTiles([dark ? BASE_DARK : BASE_LIGHT]);
-  e.currentTarget.classList.toggle('active', dark);
-  e.currentTarget.textContent = dark ? 'Light' : 'Dark';
-};
