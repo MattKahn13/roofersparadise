@@ -30,7 +30,7 @@ def build(hail_glob: str = HAIL_GLOB, out: str = OUT) -> int:
                  max(hail_in)            AS max_in,
                  count(DISTINCT date)    AS hits
           FROM read_parquet('{hail_glob}')
-          WHERE hail_in IS NOT NULL
+          WHERE hail_in IS NOT NULL AND state IS NOT NULL   -- US land only (drop ocean/foreign cells)
           GROUP BY lat, lng
         ) TO '{tmp}' (FORMAT PARQUET)
     """)

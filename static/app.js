@@ -34,7 +34,7 @@ const $ = id => document.getElementById(id);
 
 map.on('load', async () => {
   map.addSource('hail', { type: 'raster', tiles: [tileUrl()], tileSize: 256,
-    minzoom: 0, maxzoom: 22, attribution: 'Hail: NOAA MRMS' });
+    minzoom: 0, maxzoom: 11, attribution: 'Hail: NOAA MRMS' });   // overzoom past 11 -> smooth stretch
   map.addLayer({ id: 'hail', type: 'raster', source: 'hail',
     paint: { 'raster-opacity': 0.82, 'raster-resampling': 'linear' } });   // linear = smooth / blur-in
 
@@ -71,7 +71,7 @@ function human(iso) {
 // tile URL for the current metric + date ('' date = cumulative "all hail")
 function tileUrl() {
   const d = (!totalMode && DATES[curIdx]) ? '&date=' + DATES[curIdx].date : '';
-  return `${location.origin}/tiles/{z}/{x}/{y}.png?metric=${metric}${d}&r=2`;   // r = tile-render version (cache-bust)
+  return `${location.origin}/tiles/{z}/{x}/{y}.png?metric=${metric}${d}&r=3`;   // r = tile-render version (cache-bust)
 }
 function reloadTiles() {
   updateTime();
@@ -94,13 +94,16 @@ function setBar(state) {
 async function onMapClick(e) {
   const { lat, lng } = e.lngLat;
   let r; try { r = await (await fetch(`/api/point?lat=${lat}&lng=${lng}`)).json(); } catch (_) { return; }
+  const rows = (r.dates || []).map(x =>
+    `<div class="row"><span>${human(x.date)}</span><b>${(+x.max_in).toFixed(2)}"</b></div>`).join('');
   if (metric === 'frequency') {
-    if (r.hits) { showBadge(e.point, null, `${r.hits} storm-days`);
-      openSheet(`${r.hits} storm-days here`, 'How often hail has hit this spot -- repeat-hit zones are the highest-opportunity neighborhoods.', ''); }
+    if (!r.hits) return;
+    showBadge(e.point, null, `${r.hits} storm-days`);
+    openSheet(`Hail hit here ${r.hits} time(s)`, r.dates && r.dates.length ? 'Most recent dates:' : '', rows);
   } else if (r.max_in) {
     showBadge(e.point, r.max_in);
-    const when = totalMode ? 'Worst hail recorded here' : (DATES[curIdx] ? human(DATES[curIdx].date) : '');
-    openSheet(`${r.max_in.toFixed(2)}" hail`, `${when} -- radar-estimated max stone size.`, '');
+    openSheet(`Worst hail here: ${r.max_in.toFixed(2)}"`,
+      r.dates && r.dates.length ? `Hit ${r.hits} time(s) -- max size by date:` : '', rows);
   }
 }
 function updateTime() {

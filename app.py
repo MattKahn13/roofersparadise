@@ -79,14 +79,18 @@ def tile_png(z: int, x: int, y: int, metric: str = "size", date: str | None = No
 
 @app.get("/api/point")
 def api_point(lat: float, lng: float):
-    """Nearest cumulative cell to a tapped point (raster tiles carry no clickable features)."""
-    rows = _q(f"""select max_in, hits from read_parquet('{CUM}')
-                  where lat between {lat - 0.03} and {lat + 0.03}
-                    and lng between {lng - 0.03} and {lng + 0.03}
-                  order by (lat - {lat}) * (lat - {lat}) + (lng - {lng}) * (lng - {lng}) limit 1""")
-    if rows and rows[0][0] is not None:
-        return {"max_in": round(float(rows[0][0]), 2), "hits": int(rows[0][1])}
-    return {"max_in": None, "hits": None}
+    """Tapped point -> worst hail + how many times + the actual DATES it was hit (US land only)."""
+    box = (f"lat between {lat - 0.03} and {lat + 0.03} and lng between {lng - 0.03} and {lng + 0.03}")
+    cum = _q(f"""select max_in, hits from read_parquet('{CUM}') where {box}
+                 order by (lat - {lat}) * (lat - {lat}) + (lng - {lng}) * (lng - {lng}) limit 1""")
+    dts = _q(f"""select date, max(hail_in) mx from read_parquet('{HAIL_GLOB}')
+                 where {box} and state is not null and hail_in >= 0.75
+                 group by date order by date desc limit 15""")
+    return {
+        "max_in": round(float(cum[0][0]), 2) if cum and cum[0][0] is not None else None,
+        "hits": int(cum[0][1]) if cum and cum[0][0] is not None else 0,
+        "dates": [{"date": r[0], "max_in": round(float(r[1]), 2)} for r in dts],
+    }
 
 
 @app.get("/")

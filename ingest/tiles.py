@@ -27,10 +27,11 @@ PAD = 32                  # px margin queried beyond the tile so dilate/blur don
 CELL_DEG = 0.01           # MRMS MESH grid spacing -- used to size each cell's footprint in px
 ALPHA = 184               # ~0.72 opacity, matching the fill layer it replaces
 
-# (threshold, RGB) high->low; first threshold a value clears wins. Matches app.js NWS ramp.
-SIZE_BUCKETS = [(2.75, (122, 12, 12)), (2.0, (192, 24, 24)), (1.5, (242, 84, 45)),
-                (1.0, (251, 154, 60)), (0.75, (255, 210, 77))]
-FREQ_BUCKETS = [(8, (75, 31, 166)), (5, (123, 82, 204)), (3, (169, 143, 224)), (2, (217, 210, 240))]
+# CONTINUOUS color ramps (value, RGB) low->high -- interpolated per pixel for a smooth gradient
+# (hard buckets read as "discrete" stepped bands; a gradient reads as continuous regions).
+SIZE_RAMP = [(0.75, (255, 210, 77)), (1.0, (251, 154, 60)), (1.5, (242, 84, 45)),
+             (2.0, (192, 24, 24)), (2.75, (122, 12, 12))]
+FREQ_RAMP = [(2, (217, 210, 240)), (3, (169, 143, 224)), (5, (123, 82, 204)), (8, (75, 31, 166))]
 
 
 def tile_bbox(z: int, x: int, y: int):
@@ -43,12 +44,15 @@ def tile_bbox(z: int, x: int, y: int):
     return lng(x), lat(y + 1), lng(x + 1), lat(y)
 
 
-def _colorize(grid: np.ndarray, buckets) -> np.ndarray:
-    """value grid -> RGBA uint8, bucketed to the legend colors (0 = transparent)."""
-    rgba = np.zeros((TILE, TILE, 4), dtype=np.uint8)
-    for thr, (r, g, b) in sorted(buckets, key=lambda t: t[0]):   # low->high so higher overwrites
-        m = grid >= thr
-        rgba[m] = (r, g, b, ALPHA)
+def _colorize(grid: np.ndarray, ramp) -> np.ndarray:
+    """value grid -> RGBA uint8 via a CONTINUOUS interpolated gradient (smooth, not stepped).
+    Cells below the ramp floor (grid==0) are transparent."""
+    stops = np.array([s[0] for s in ramp], dtype=np.float64)
+    cols = np.array([s[1] for s in ramp], dtype=np.float64)
+    rgba = np.zeros(grid.shape + (4,), dtype=np.uint8)
+    for ch in range(3):
+        rgba[..., ch] = np.interp(grid, stops, cols[:, ch]).astype(np.uint8)
+    rgba[..., 3] = np.where(grid > 0, ALPHA, 0).astype(np.uint8)
     return rgba
 
 
@@ -72,13 +76,13 @@ def render_tile(con, z: int, x: int, y: int, metric: str = "size", date: str | N
     """PNG bytes for the tile, or None if there is no hail in it (serve as transparent/204)."""
     w, s, e, n = tile_bbox(z, x, y)
     if date:
-        col, src, minv, buckets = "hail_in", f"read_parquet('{HAIL_GLOB}')", 0.75, SIZE_BUCKETS
-        where = f"date = '{date}' AND hail_in IS NOT NULL"
+        col, src, minv, ramp = "hail_in", f"read_parquet('{HAIL_GLOB}')", 0.75, SIZE_RAMP
+        where = f"date = '{date}' AND hail_in IS NOT NULL AND state IS NOT NULL"   # US land only
     elif metric == "frequency":
-        col, src, minv, buckets = "hits", f"read_parquet('{CUM}')", 2, FREQ_BUCKETS
-        where = "hits IS NOT NULL"
+        col, src, minv, ramp = "hits", f"read_parquet('{CUM}')", 2, FREQ_RAMP
+        where = "hits IS NOT NULL"     # cumulative is already US-filtered at build time
     else:
-        col, src, minv, buckets = "max_in", f"read_parquet('{CUM}')", 0.75, SIZE_BUCKETS
+        col, src, minv, ramp = "max_in", f"read_parquet('{CUM}')", 0.75, SIZE_RAMP
         where = "max_in IS NOT NULL"
 
     # Bin to tile pixels INSIDE DuckDB (Web-Mercator px/py, MAX per pixel) so the query returns a
@@ -114,8 +118,8 @@ def render_tile(con, z: int, x: int, y: int, metric: str = "size", date: str | N
     cellpx = int(round(CELL_DEG / ((e - w) / TILE)))
     grid = _dilate(grid, min(max(cellpx * 2, 3), 20))[PAD:PAD + TILE, PAD:PAD + TILE]
 
-    # Colorize, then a light gaussian blur softens the band edges so regions read as smooth swaths.
-    img = Image.fromarray(_colorize(grid, buckets), "RGBA").filter(ImageFilter.GaussianBlur(1.4))
+    # Colorize with the continuous gradient, then a gaussian blur so regions read as smooth swaths.
+    img = Image.fromarray(_colorize(grid, ramp), "RGBA").filter(ImageFilter.GaussianBlur(2.2))
     buf = io.BytesIO()
     img.save(buf, "PNG", optimize=True)
     return buf.getvalue()
