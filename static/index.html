@@ -49,12 +49,16 @@
 
   /* standard map controls get themed via maplibre classes */
   .maplibregl-ctrl-group{border-radius:12px !important;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.16) !important}
-  .maplibregl-ctrl-group button{width:42px !important;height:42px !important}
+  .maplibregl-ctrl-group button{width:44px !important;height:44px !important}
   .maplibregl-ctrl-top-right{top:calc(var(--safeT) + 62px) !important;right:12px !important}
 
   /* hot-zones toggle (sits under the standard map controls) */
-  #btn-mode{position:fixed;right:12px;top:calc(var(--safeT) + 200px);z-index:20;height:42px;padding:0 13px;border-radius:12px;border:0;font-size:12px;font-weight:700;cursor:pointer;color:var(--navy);white-space:nowrap}
+  #btn-mode{position:fixed;right:12px;top:calc(var(--safeT) + 205px);z-index:20;height:44px;padding:0 13px;border-radius:12px;border:0;font-size:12px;font-weight:700;cursor:pointer;color:var(--navy);white-space:nowrap}
   #btn-mode.active{background:#4b1fa6;color:#fff}
+  /* "Near me" quick-win button -- thumb zone, one tap to see your own hail */
+  #btn-near{position:fixed;right:12px;bottom:calc(var(--safeB) + 66px);z-index:19;height:44px;padding:0 16px;
+    border-radius:22px;border:0;font-size:13px;font-weight:800;color:#fff;background:var(--navy);cursor:pointer;
+    display:flex;align-items:center;gap:6px;box-shadow:0 3px 14px rgba(0,0,0,.28)}
 
   /* viewport-refresh indicator */
   .updating{position:fixed;left:50%;bottom:calc(var(--safeB) + 80px);transform:translateX(-50%);z-index:40;
@@ -80,10 +84,10 @@
 
   /* time bar -- "All hail" toggle + calendar date-picker + prev/next storm-day */
   .timebar{position:fixed;left:12px;right:12px;bottom:calc(var(--safeB) + 12px);z-index:18;border-radius:16px;padding:9px 12px;display:flex;align-items:center;gap:9px;max-width:520px;margin:0 auto}
-  .timebar button{border:0;background:var(--navy);color:#fff;width:38px;height:38px;border-radius:10px;font-size:17px;cursor:pointer;flex:none;line-height:1}
+  .timebar button{border:0;background:var(--navy);color:#fff;width:44px;height:44px;border-radius:10px;font-size:18px;cursor:pointer;flex:none;line-height:1}
   #t-all{width:auto;padding:0 15px;font-size:13px;font-weight:800;background:#e9edf1;color:var(--navy)}
   #t-all.active{background:var(--amber)}
-  #t-picker{flex:1;min-width:40px;height:38px;border:1px solid #dde3e8;border-radius:10px;background:#fff;padding:0 10px;font-size:14px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+  #t-picker{flex:1;min-width:40px;height:44px;border:1px solid #dde3e8;border-radius:10px;background:#fff;padding:0 10px;font-size:14px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
 
   /* bottom sheet -- hidden until you tap something, then slides up over the time bar */
   .sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;background:#fff;border-radius:20px 20px 0 0;
@@ -133,6 +137,7 @@
 </div>
 
 <button id="btn-mode" class="glass" title="Show where hail hits most often">Hail size</button>
+<button id="btn-near" title="See hail near your location">&#128205; Near me</button>
 
 <div class="caption glass" id="caption">
   <b>Where hail has hit</b> &mdash; yellow = small, red = giant. <b>Search your city</b> or <b>tap the map</b> to see any spot's hail history.
@@ -170,6 +175,6 @@
 <div class="modal" id="modal"><div class="card" id="card"></div></div>
 
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-<script src="/static/app.js?v=16"></script>
+<script src="/static/app.js?v=17"></script>
 </body>
 </html>

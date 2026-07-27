@@ -144,6 +144,17 @@ function toggleMetric() {
 }
 $('btn-mode').onclick = toggleMetric;
 
+/* "Near me" -- one tap to the user's own area (value-first; no auto-prompt on load) */
+$('btn-near').onclick = () => {
+  if (!navigator.geolocation) { openSheet('Location unavailable', 'Search your city in the box up top instead.', ''); return; }
+  const b = $('btn-near'), orig = b.innerHTML;
+  b.textContent = 'Locating…';
+  navigator.geolocation.getCurrentPosition(
+    p => { b.innerHTML = orig; map.flyTo({ center: [p.coords.longitude, p.coords.latitude], zoom: 9 }); },
+    () => { b.innerHTML = orig; openSheet("Couldn't locate you", 'Allow location access, or search your city up top.', ''); },
+    { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
+};
+
 /* address search -> fly there (moveend refetches viewport) + hail history */
 const q = $('q');
 const sug = $('suggest');
