@@ -71,7 +71,7 @@ function human(iso) {
 // tile URL for the current metric + date ('' date = cumulative "all hail")
 function tileUrl() {
   const d = (!totalMode && DATES[curIdx]) ? '&date=' + DATES[curIdx].date : '';
-  return `${location.origin}/tiles/{z}/{x}/{y}.png?metric=${metric}${d}`;
+  return `${location.origin}/tiles/{z}/{x}/{y}.png?metric=${metric}${d}&r=2`;   // r = tile-render version (cache-bust)
 }
 function reloadTiles() {
   updateTime();

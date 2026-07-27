@@ -15,7 +15,7 @@ Colors match the front-end legend (NWS size ramp; purple repeat-hit ramp).
 from __future__ import annotations
 import io, math, os
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.environ.get("DATA_DIR") or os.path.join(HERE, "..", "data")
@@ -23,7 +23,8 @@ HAIL_GLOB = os.path.join(DATA, "hail", "**", "*.parquet").replace("\\", "/")
 CUM = os.path.join(DATA, "cumulative.parquet").replace("\\", "/")
 
 TILE = 256
-CELL_DEG = 0.01            # MRMS MESH grid spacing -- used to size each cell's footprint in px
+PAD = 32                  # px margin queried beyond the tile so dilate/blur don't seam at edges
+CELL_DEG = 0.01           # MRMS MESH grid spacing -- used to size each cell's footprint in px
 ALPHA = 184               # ~0.72 opacity, matching the fill layer it replaces
 
 # (threshold, RGB) high->low; first threshold a value clears wins. Matches app.js NWS ramp.
@@ -51,6 +52,22 @@ def _colorize(grid: np.ndarray, buckets) -> np.ndarray:
     return rgba
 
 
+def _dilate(a: np.ndarray, k: int) -> np.ndarray:
+    """Separable square max-dilation by radius k -- grows and merges cells into continuous regions
+    while preserving peak intensity (max, not average)."""
+    if k < 1:
+        return a
+    b = a.copy()
+    for d in range(1, k + 1):
+        b[d:, :] = np.maximum(b[d:, :], a[:-d, :])
+        b[:-d, :] = np.maximum(b[:-d, :], a[d:, :])
+    c = b.copy()
+    for d in range(1, k + 1):
+        c[:, d:] = np.maximum(c[:, d:], b[:, :-d])
+        c[:, :-d] = np.maximum(c[:, :-d], b[:, d:])
+    return c
+
+
 def render_tile(con, z: int, x: int, y: int, metric: str = "size", date: str | None = None):
     """PNG bytes for the tile, or None if there is no hail in it (serve as transparent/204)."""
     w, s, e, n = tile_bbox(z, x, y)
@@ -64,40 +81,41 @@ def render_tile(con, z: int, x: int, y: int, metric: str = "size", date: str | N
         col, src, minv, buckets = "max_in", f"read_parquet('{CUM}')", 0.75, SIZE_BUCKETS
         where = "max_in IS NOT NULL"
 
-    # Bin to tile pixels INSIDE DuckDB (Web-Mercator px/py, MAX per pixel) so the query returns
-    # <=256x256 rows no matter how many cells fall in the tile -- low-zoom tiles stay fast.
+    # Bin to tile pixels INSIDE DuckDB (Web-Mercator px/py, MAX per pixel) so the query returns a
+    # bounded number of rows at any zoom. Query a bbox padded by PAD px so the dilate/blur that turns
+    # discrete cells into CONTINUOUS regions is seamless across tile edges.
     npow = 2 ** z
+    dlng = (e - w) * PAD / TILE
+    dlat = (n - s) * PAD / TILE
     px_e = f"CAST(floor(((lng + 180.0) / 360.0 * {npow} - {x}) * {TILE}) AS INTEGER)"
     py_e = f"CAST(floor(((1.0 - asinh(tan(radians(lat))) / pi()) / 2.0 * {npow} - {y}) * {TILE}) AS INTEGER)"
     q = (f"SELECT {px_e} px, {py_e} py, MAX({col}) v FROM {src} "
-         f"WHERE {where} AND lat BETWEEN {s} AND {n} AND lng BETWEEN {w} AND {e} AND {col} >= {minv} "
+         f"WHERE {where} AND lat BETWEEN {s - dlat} AND {n + dlat} "
+         f"AND lng BETWEEN {w - dlng} AND {e + dlng} AND {col} >= {minv} "
          f"GROUP BY px, py")
     rows = con.execute(q).fetchall()
     if not rows:
         return None
 
+    G = TILE + 2 * PAD
     a = np.asarray(rows, dtype=np.float64)
-    px, py, v = a[:, 0].astype(np.int32), a[:, 1].astype(np.int32), a[:, 2].astype(np.float32)
-    keep = (px >= 0) & (px < TILE) & (py >= 0) & (py < TILE)
+    px = a[:, 0].astype(np.int32) + PAD
+    py = a[:, 1].astype(np.int32) + PAD
+    v = a[:, 2].astype(np.float32)
+    keep = (px >= 0) & (px < G) & (py >= 0) & (py < G)
     px, py, v = px[keep], py[keep], v[keep]
     if not len(v):
         return None
 
-    grid = np.zeros((TILE, TILE), dtype=np.float32)
+    grid = np.zeros((G, G), dtype=np.float32)
     np.maximum.at(grid, (py, px), v)
 
-    # Fill each cell's on-screen footprint so cells don't render as sparse 1px dots when zoomed in.
-    k = int(round(CELL_DEG / ((e - w) / TILE)))
-    if k >= 2:
-        k = min(k, 12)
-        g = grid.copy()
-        for dy in range(k):
-            for dx in range(k):
-                if dy or dx:
-                    g[dy:, dx:] = np.maximum(g[dy:, dx:], grid[:TILE - dy, :TILE - dx])
-        grid = g
+    # Grow + merge cells into continuous regions (max-dilate preserves peak hail), then crop the pad.
+    cellpx = int(round(CELL_DEG / ((e - w) / TILE)))
+    grid = _dilate(grid, min(max(cellpx * 2, 3), 20))[PAD:PAD + TILE, PAD:PAD + TILE]
 
-    img = Image.fromarray(_colorize(grid, buckets), "RGBA")
+    # Colorize, then a light gaussian blur softens the band edges so regions read as smooth swaths.
+    img = Image.fromarray(_colorize(grid, buckets), "RGBA").filter(ImageFilter.GaussianBlur(1.4))
     buf = io.BytesIO()
     img.save(buf, "PNG", optimize=True)
     return buf.getvalue()
